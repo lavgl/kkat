@@ -1,0 +1,13 @@
+[package]
+name = "kkat-server"
+version = "0.1.0"
+authors = ["Vitaly Homonov <avg.idm@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+actix-web = "0.7"
+rdkafka = "0.20.0"
+rdkafka-sys = "0.11.6-1"
+futures = "0.1.26"
+bytes = "0.4.12"
+serde = { version = "1.0", features = ["derive"] }
