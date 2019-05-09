@@ -8,7 +8,7 @@ use std::{thread, time};
 use rdkafka::{
   config::RDKafkaLogLevel,
   consumer::{BaseConsumer, CommitMode, Consumer},
-  message::Message,
+  message::{BorrowedMessage, Message},
   topic_partition_list::{Offset::Offset, TopicPartitionList},
   ClientConfig,
 };
@@ -33,8 +33,47 @@ fn adjust_offset(offset: i64, (min_offset, max_offset): (i64, i64)) -> i64 {
   offset
 }
 
+static FORMATTERS: &[char] = &['s', 'k', 't', 'T'];
+
+fn format_message(template: &str, message: &BorrowedMessage) -> String {
+  let payload = match message.payload_view::<str>() {
+    None => "",
+    Some(Ok(s)) => s,
+    Some(Err(e)) => {
+      println!("error while deserealizing value");
+      ""
+    }
+  };
+
+  let payload_len = &format!("{}", message.payload_len());
+
+  let key = match message.key_view::<str>() {
+    None => "",
+    Some(Ok(s)) => s,
+    Some(Err(e)) => {
+      println!("error while deserealizing value");
+      ""
+    }
+  };
+
+  let topic = message.topic();
+  let partition = &format!("{}", message.partition());
+  let offset = &format!("{}", message.offset());
+  let timestamp = &message.timestamp().to_millis().unwrap_or(0).to_string();
+
+  template
+    .replace("%s", payload)
+    .replace("%S", payload_len)
+    .replace("%k", key)
+    .replace("%t", topic)
+    .replace("%p", partition)
+    .replace("%o", offset)
+    .replace("%T", timestamp)
+}
+
 pub fn read_messages(query: QueryParams) -> mpsc::UnboundedReceiver<Bytes> {
   let offset = query.offset.unwrap_or(0);
+  let format = query.format.unwrap_or_else(|| "%s\n".to_owned());
 
   let consumer: BaseConsumer = ClientConfig::new()
     .set("group.id", "kkat-2")
@@ -87,19 +126,12 @@ pub fn read_messages(query: QueryParams) -> mpsc::UnboundedReceiver<Bytes> {
         None => continue,
       };
 
-      let payload = match message.payload_view::<str>() {
-        None => "",
-        Some(Ok(s)) => s,
-        Some(Err(e)) => {
-          println!("error while deserealizing value");
-          ""
-        }
-      };
+      let message_text = format!("{}\n", format_message(&format, &message));
 
-      println!("payload: {}", payload);
+      println!("message_text: {}", message_text);
 
       sender
-        .unbounded_send(Bytes::from(format!("{}\n", payload)))
+        .unbounded_send(Bytes::from(message_text))
         .expect("sended correctly");
 
       consumer
